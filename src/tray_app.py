@@ -88,6 +88,9 @@ class TrayApp:
         self.auto_click = True
         self.close_delay = int(os.getenv("AUTO_CLOSE_DELAY", "10"))
         self.output_dir: Optional[str] = os.getenv("OUTPUT_DIR")
+        # Logs: activés par défaut, dossier par défaut ./logs
+        self.logging_enabled: bool = True
+        self.log_dir: str = os.path.join(os.getcwd(), "logs")
         # Port OAuth local (par défaut 6969)
         try:
             self.oauth_port: int = int(os.getenv("OAUTH_LOCAL_SERVER_PORT", "6969"))
@@ -102,23 +105,14 @@ class TrayApp:
             item(lambda _item: f"Config: {self._config_path()}", None, enabled=False),
             item("Connect", self.connect),
             item("Disconnect", self.disconnect),
-            item("Settings", self.open_settings),
+            item("Settings", self.open_settings, default=True),
             item("Start", self.start),
             item("Stop", self.stop),
             item("Quit", self.quit),
         )
 
-        # Setup logging
-        logs_dir = os.path.join(os.getcwd(), "logs")
-        os.makedirs(logs_dir, exist_ok=True)
-        logging.basicConfig(
-            level=logging.INFO,
-            format="%(asctime)s [%(levelname)s] %(message)s",
-            handlers=[
-                logging.FileHandler(os.path.join(logs_dir, "app.log"), encoding="utf-8"),
-                logging.StreamHandler(sys.stdout),
-            ],
-        )
+        # Setup logging selon configuration
+        self._setup_logging()
 
     def start(self, icon: Optional[pystray.Icon] = None, item_clicked: Optional[item] = None):
         if self.worker and self.worker.is_alive():
@@ -220,11 +214,29 @@ class TrayApp:
         oauth_entry = ttk.Entry(frm, textvariable=oauth_var, width=10)
         oauth_entry.grid(row=3, column=1, sticky="w", padx=5, pady=5)
 
+        # Logging enable/disable
+        log_enable_var = tk.BooleanVar(value=bool(self.logging_enabled))
+        log_enable_chk = ttk.Checkbutton(frm, text="Enable Logging", variable=log_enable_var)
+        log_enable_chk.grid(row=4, column=0, sticky="w", padx=5, pady=5)
+
+        # Logs folder
+        ttk.Label(frm, text="Logs Folder").grid(row=5, column=0, sticky="w", padx=5, pady=5)
+        log_dir_var = tk.StringVar(value=str(self.log_dir or ""))
+        log_dir_entry = ttk.Entry(frm, textvariable=log_dir_var, width=40)
+        log_dir_entry.grid(row=5, column=1, sticky="w", padx=5, pady=5)
+
+        def browse_log_folder():
+            folder = filedialog.askdirectory()
+            if folder:
+                log_dir_var.set(folder)
+
+        ttk.Button(frm, text="Browse...", command=browse_log_folder).grid(row=5, column=2, sticky="w", padx=5, pady=5)
+
         # Config path display
-        ttk.Label(frm, text="Config file").grid(row=4, column=0, sticky="w", padx=5, pady=5)
+        ttk.Label(frm, text="Config file").grid(row=6, column=0, sticky="w", padx=5, pady=5)
         cfg_path = self._config_path()
         cfg_label = ttk.Label(frm, text=cfg_path, wraplength=420)
-        cfg_label.grid(row=4, column=1, sticky="w", padx=5, pady=5)
+        cfg_label.grid(row=6, column=1, sticky="w", padx=5, pady=5)
 
         def open_config_folder():
             try:
@@ -234,7 +246,7 @@ class TrayApp:
             except Exception as e:
                 logging.warning("Impossible d'ouvrir le dossier de config: %s", e)
 
-        ttk.Button(frm, text="Open folder", command=open_config_folder).grid(row=4, column=2, sticky="w", padx=5, pady=5)
+        ttk.Button(frm, text="Open folder", command=open_config_folder).grid(row=6, column=2, sticky="w", padx=5, pady=5)
 
         def save_and_close():
             try:
@@ -251,6 +263,13 @@ class TrayApp:
                 if new_port <= 0 or new_port > 65535:
                     raise ValueError("Port invalide")
                 self.oauth_port = new_port
+                # Logging settings
+                self.logging_enabled = bool(log_enable_var.get())
+                new_log_dir = log_dir_var.get().strip()
+                if not new_log_dir:
+                    # si vide, remettre dossier par défaut
+                    new_log_dir = os.path.join(os.getcwd(), "logs")
+                self.log_dir = new_log_dir
                 # Répercuter immédiatement dans l'environnement
                 os.environ["OAUTH_LOCAL_SERVER_PORT"] = str(self.oauth_port)
                 if self.output_dir:
@@ -259,13 +278,15 @@ class TrayApp:
                     os.environ.pop("OUTPUT_DIR", None)
                 # Sauvegarder la configuration persistée
                 self._save_config()
+                # Reconfigurer le logging maintenant
+                self._setup_logging()
                 messagebox.showinfo("OK", "Paramètres sauvegardés. Redémarrez le watcher pour appliquer.")
                 on_close()
             except Exception:
                 messagebox.showerror("Erreur", "Veuillez entrer des nombres valides.")
 
         buttons = ttk.Frame(frm)
-        buttons.grid(row=5, column=0, columnspan=3, pady=10)
+        buttons.grid(row=7, column=0, columnspan=3, pady=10)
         ttk.Button(buttons, text="Save", command=save_and_close).grid(row=0, column=0, padx=5)
         ttk.Button(buttons, text="Cancel", command=on_close).grid(row=0, column=1, padx=5)
         win.mainloop()
@@ -296,6 +317,12 @@ class TrayApp:
             if 0 < oauth_port <= 65535:
                 self.oauth_port = oauth_port
                 os.environ["OAUTH_LOCAL_SERVER_PORT"] = str(self.oauth_port)
+            # Logging
+            logging_enabled = cfg.get("logging_enabled", self.logging_enabled)
+            self.logging_enabled = bool(logging_enabled)
+            log_dir = cfg.get("log_dir", self.log_dir)
+            if isinstance(log_dir, str) and log_dir.strip():
+                self.log_dir = log_dir.strip()
         except Exception:
             # Ignorer les erreurs de lecture/parse et garder les valeurs actuelles
             logging.warning("Impossible de charger settings.json, valeurs par défaut conservées.")
@@ -307,11 +334,48 @@ class TrayApp:
                 "close_delay": self.close_delay,
                 "output_dir": self.output_dir,
                 "oauth_port": self.oauth_port,
+                "logging_enabled": self.logging_enabled,
+                "log_dir": self.log_dir,
             }
             with open(self._config_path(), "w", encoding="utf-8") as f:
                 json.dump(cfg, f, ensure_ascii=False, indent=2)
         except Exception as e:
             logging.warning("Impossible d'enregistrer settings.json: %s", e)
+
+    def _setup_logging(self) -> None:
+        """Configure les handlers de logging selon les paramètres utilisateur.
+        Format requis: "[full date time] : message" -> on utilise [YYYY-MM-DD HH:MM:SS] : message
+        """
+        root = logging.getLogger()
+        root.setLevel(logging.INFO)
+        # Nettoyer les handlers existants
+        for h in list(root.handlers):
+            try:
+                h.flush()
+                h.close()
+            except Exception:
+                pass
+            root.removeHandler(h)
+
+        # Toujours avoir un flux console pour debug local
+        fmt = logging.Formatter(fmt="[%(asctime)s] : %(message)s", datefmt="%Y-%m-%d %H:%M:%S")
+        sh = logging.StreamHandler(sys.stdout)
+        sh.setLevel(logging.INFO)
+        sh.setFormatter(fmt)
+        root.addHandler(sh)
+
+        # Ajouter FileHandler si activé
+        if self.logging_enabled:
+            try:
+                os.makedirs(self.log_dir, exist_ok=True)
+                log_file = os.path.join(self.log_dir, "app.log.txt")
+                fh = logging.FileHandler(log_file, encoding="utf-8")
+                fh.setLevel(logging.INFO)
+                fh.setFormatter(fmt)
+                root.addHandler(fh)
+                logging.info("Fichier de log: %s", log_file)
+            except Exception as e:
+                logging.warning("Impossible d'initialiser le fichier de log: %s", e)
 
     def quit(self, icon: Optional[pystray.Icon] = None, item_clicked: Optional[item] = None):
         try:

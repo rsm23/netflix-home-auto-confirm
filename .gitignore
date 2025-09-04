@@ -5,7 +5,10 @@
 credentials.json
 token.json
 settings.json
+
+#logs
 logs.txt
+logs
 
 # Bytecode / caches
 __pycache__/
