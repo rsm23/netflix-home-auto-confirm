@@ -4,6 +4,7 @@ import sys
 import threading
 import time
 import logging
+import atexit
 from typing import Optional
 
 import pystray
@@ -18,6 +19,60 @@ try:
     load_dotenv()
 except Exception:
     pass
+
+# --- Single-instance (Windows .exe) -----------------------------------------------------------
+_single_instance_handle = None
+
+def _enforce_single_instance_if_frozen() -> None:
+    """Empêche plusieurs instances lorsque packagé en .exe (Windows).
+
+    Crée un mutex nommé Global\\confirm-netflix-house-singleton. Si déjà présent, affiche
+    un message et termine le processus immédiatement.
+    """
+    if not getattr(sys, "frozen", False):
+        return
+    if os.name != "nt":
+        return
+    try:
+        import ctypes
+        from ctypes import wintypes
+
+        kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
+        CreateMutexW = kernel32.CreateMutexW
+        CreateMutexW.argtypes = [wintypes.LPVOID, wintypes.BOOL, wintypes.LPCWSTR]
+        CreateMutexW.restype = wintypes.HANDLE
+
+        mutex_name = "Global\\confirm-netflix-house-singleton"
+        h_mutex = CreateMutexW(None, False, mutex_name)
+        if not h_mutex:
+            return
+        err = ctypes.get_last_error()
+        global _single_instance_handle
+        _single_instance_handle = h_mutex
+        if err == 183:  # ERROR_ALREADY_EXISTS
+            # Optionnel: informer l'utilisateur
+            try:
+                user32 = ctypes.WinDLL("user32", use_last_error=True)
+                MB_ICONEXCLAMATION = 0x30
+                user32.MessageBoxW(None, "L'application est déjà en cours d'exécution.", "confirm-netflix-house", MB_ICONEXCLAMATION)
+            except Exception:
+                pass
+            # Sortie immédiate
+            sys.exit(0)
+    except Exception:
+        # En cas d'échec du mécanisme, ne pas bloquer l'app.
+        pass
+
+def _release_single_instance() -> None:
+    if os.name != "nt":
+        return
+    try:
+        import ctypes
+        if _single_instance_handle:
+            kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
+            kernel32.CloseHandle(_single_instance_handle)
+    except Exception:
+        pass
 
 # Importer les fonctions de l'app (compatible package et exécutable PyInstaller)
 try:
@@ -420,6 +475,8 @@ class TrayApp:
 
 
 def main():
+    _enforce_single_instance_if_frozen()
+    atexit.register(_release_single_instance)
     app = TrayApp()
     app.run()
 
