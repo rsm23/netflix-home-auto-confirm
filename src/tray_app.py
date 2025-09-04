@@ -24,8 +24,12 @@ try:
     # Contexte package (python -m src.tray_app)
     from .main import process_once, _now_ms  # type: ignore
 except Exception:
-    # Contexte script/pyinstaller (imports absolus)
-    from main import process_once, _now_ms  # type: ignore
+    try:
+        # PyInstaller avec package 'src' conservé
+        from src.main import process_once, _now_ms  # type: ignore
+    except Exception:
+        # Contexte script/pyinstaller (imports absolus)
+        from main import process_once, _now_ms  # type: ignore
 
 
 def _make_image(color_bg=(30, 144, 255), color_fg=(255, 255, 255)) -> Image.Image:
@@ -152,7 +156,13 @@ class TrayApp:
         try:
             # Appliquer le port OAuth choisi dans l'environnement
             os.environ["OAUTH_LOCAL_SERVER_PORT"] = str(self.oauth_port)
-            from .gmail_client import GmailWatcher
+            try:
+                from .gmail_client import GmailWatcher  # type: ignore
+            except Exception:
+                try:
+                    from src.gmail_client import GmailWatcher  # type: ignore
+                except Exception:
+                    from gmail_client import GmailWatcher  # type: ignore
             gw = GmailWatcher()
             # Appel léger: récupérer 0 mail déclenche juste l'auth si besoin
             gw.search_messages(max_results=1)
