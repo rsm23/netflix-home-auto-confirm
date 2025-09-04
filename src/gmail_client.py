@@ -14,6 +14,11 @@ from googleapiclient.errors import HttpError
 # Scopes pour lire et modifier (marquer comme lu)
 SCOPES = ["https://www.googleapis.com/auth/gmail.modify"]
 
+# Évite une erreur quand Google renvoie un scope élargi (ex: readonly + modify)
+# par rapport à celui demandé. Cela ne réduit pas la sécurité car l'ensemble
+# retourné est un superset et la lib google gère les permissions effectives.
+os.environ.setdefault("OAUTHLIB_RELAX_TOKEN_SCOPE", "1")
+
 DEFAULT_QUERY = 'from:info@account.netflix.com subject:"comment mettre à jour votre foyer Netflix" is:unread'
 
 
@@ -103,7 +108,6 @@ class GmailWatcher:
                             port=port,
                             access_type="offline",
                             prompt="consent",
-                            include_granted_scopes="true",
                         )
                     except Exception as e:
                         msg = str(e)
@@ -134,7 +138,6 @@ class GmailWatcher:
                         port=port,
                         access_type="offline",
                         prompt="consent",
-                        include_granted_scopes="true",
                     )
                 except Exception as e:
                     msg = str(e)
@@ -161,7 +164,6 @@ class GmailWatcher:
                     port=port,
                     access_type="offline",
                     prompt="consent",
-                    include_granted_scopes="true",
                 )
             with open(self.token_path, "w") as token:
                 token.write(creds.to_json())
