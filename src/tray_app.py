@@ -9,7 +9,7 @@ import pystray
 from pystray import MenuItem as item
 from PIL import Image, ImageDraw
 import tkinter as tk
-from tkinter import ttk, messagebox
+from tkinter import ttk, messagebox, filedialog
 
 # Charger .env si présent
 try:
@@ -41,6 +41,7 @@ class WatcherThread(threading.Thread):
         debug: bool = False,
         auto_click: bool = True,
         close_delay: int = 10,
+        output_dir: Optional[str] = None,
     ) -> None:
         super().__init__(daemon=True)
         self.stop_event = stop_event
@@ -50,6 +51,7 @@ class WatcherThread(threading.Thread):
         self.debug = debug
         self.auto_click = auto_click
         self.close_delay = close_delay
+        self.output_dir = output_dir
 
     def run(self) -> None:
         logging.info("Watcher démarré: interval=%ss auto_click=%s", self.interval, self.auto_click)
@@ -63,6 +65,7 @@ class WatcherThread(threading.Thread):
                     auto_click=self.auto_click,
                     close_delay=self.close_delay,
                     anchor_ts_ms=anchor,
+                    output_dir=self.output_dir,
                 )
                 if clicked and new_anchor is not None:
                     anchor = new_anchor
@@ -83,9 +86,10 @@ class TrayApp:
         self.query = os.getenv("GMAIL_QUERY")
         self.auto_click = True
         self.close_delay = int(os.getenv("AUTO_CLOSE_DELAY", "10"))
+        self.output_dir: Optional[str] = os.getenv("OUTPUT_DIR")
 
         self.icon.menu = pystray.Menu(
-            item(lambda: f"Status: {'RUNNING' if self.worker and self.worker.is_alive() else 'STOPPED'}", lambda: None, enabled=False),
+            item(lambda _item: f"Status: {'RUNNING' if self.worker and self.worker.is_alive() else 'STOPPED'}", None, enabled=False),
             item("Connect", self.connect),
             item("Disconnect", self.disconnect),
             item("Settings", self.open_settings),
@@ -118,6 +122,7 @@ class TrayApp:
             debug=False,
             auto_click=self.auto_click,
             close_delay=self.close_delay,
+            output_dir=self.output_dir,
         )
         self.worker.start()
         logging.info("Start demandé")
@@ -157,7 +162,7 @@ class TrayApp:
             messagebox.showerror("Erreur déconnexion", str(e))
 
     def open_settings(self, icon: Optional[pystray.Icon] = None, item_clicked: Optional[item] = None):
-        """Ouvre une petite fenêtre pour régler intervalle et délai de fermeture."""
+        """Ouvre une petite fenêtre pour régler intervalle, délai de fermeture et dossier de sortie."""
         if getattr(self, "_settings_open", False):
             return
         self._settings_open = True
@@ -183,6 +188,18 @@ class TrayApp:
         delay_entry = ttk.Entry(frm, textvariable=delay_var, width=10)
         delay_entry.grid(row=1, column=1, sticky="w", padx=5, pady=5)
 
+        ttk.Label(frm, text="Output Folder").grid(row=2, column=0, sticky="w", padx=5, pady=5)
+        out_var = tk.StringVar(value=str(self.output_dir or ""))
+        out_entry = ttk.Entry(frm, textvariable=out_var, width=40)
+        out_entry.grid(row=2, column=1, sticky="w", padx=5, pady=5)
+
+        def browse_folder():
+            folder = filedialog.askdirectory()
+            if folder:
+                out_var.set(folder)
+
+        ttk.Button(frm, text="Browse...", command=browse_folder).grid(row=2, column=2, sticky="w", padx=5, pady=5)
+
         def save_and_close():
             try:
                 new_interval = int(interval_var.get())
@@ -191,15 +208,17 @@ class TrayApp:
                     raise ValueError("Valeurs invalides")
                 self.interval = new_interval
                 self.close_delay = new_delay
+                new_out = out_var.get().strip()
+                self.output_dir = new_out or None
                 messagebox.showinfo("OK", "Paramètres sauvegardés. Redémarrez le watcher pour appliquer.")
                 on_close()
             except Exception:
                 messagebox.showerror("Erreur", "Veuillez entrer des nombres valides.")
 
-        buttons = ttk.Frame(frm)
-        buttons.grid(row=2, column=0, columnspan=2, pady=10)
-        ttk.Button(buttons, text="Save", command=save_and_close).grid(row=0, column=0, padx=5)
-        ttk.Button(buttons, text="Cancel", command=on_close).grid(row=0, column=1, padx=5)
+            buttons = ttk.Frame(frm)
+            buttons.grid(row=3, column=0, columnspan=3, pady=10)
+            ttk.Button(buttons, text="Save", command=save_and_close).grid(row=0, column=0, padx=5)
+            ttk.Button(buttons, text="Cancel", command=on_close).grid(row=0, column=1, padx=5)
 
         win.mainloop()
 

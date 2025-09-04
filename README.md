@@ -7,6 +7,7 @@ Une petite appli en Python qui surveille un compte Gmail et ouvre le lien de mis
 - Filtre les messages dont l'expéditeur est `info@account.netflix.com` et dont l'objet contient `comment mettre à jour votre foyer Netflix`.
 - Parcourt le contenu pour trouver un lien contenant `/update-primary-location` et l'ouvre dans le navigateur par défaut.
 - Peut fonctionner en mode "polling" (vérification périodique) simple et fiable.
+- Après clic sur le bouton Netflix, extrait le texte du champ "Demande effectuée par" dans l'email et l'enregistre dans un fichier `.txt` dans un dossier de sortie configurable.
 
 ## Prérequis
 - Python 3.9+ recommandé.
@@ -89,6 +90,11 @@ python -m src.tray_app
 
 Un menu s’affiche sur l’icône: Start / Stop / Quit.
 
+Dans le menu "Settings", vous pouvez régler:
+- `Interval (s)` : l’intervalle de polling.
+- `Close Delay (s)` : le délai de fermeture de l’onglet après le clic Playwright.
+- `Output Folder` : le dossier où seront enregistrés les fichiers `.txt` contenant le texte "Demande effectuée par". Après changement, arrêtez puis redémarrez le watcher (Stop puis Start) pour appliquer.
+
 ## Construire un .exe (Windows)
 
 Nous recommandons PyInstaller pour packager un .exe autonome:
@@ -128,7 +134,18 @@ Variables utiles pour le mode service/tray:
 - Variables d'environnement (optionnelles) :
   - `GMAIL_QUERY` : surcharge la requête Gmail (par défaut : `from:info@account.netflix.com subject:"comment mettre à jour votre foyer Netflix"`).
   - `POLL_INTERVAL` : intervalle de polling par défaut en secondes.
+  - `OUTPUT_DIR` : dossier de sortie par défaut pour enregistrer les fichiers `.txt` (peut aussi être défini via `--output-dir` en CLI ou dans la GUI Settings).
   - Note: par défaut, la requête inclut `is:unread` et les messages cliqués sont marqués comme lus.
+
+### Export du texte "Demande effectuée par"
+Lorsqu’un clic réussi est effectué sur le bouton de confirmation Netflix via Playwright, l’application:
+1) Analyse l’email pour trouver la cellule `<td>` contenant "Demande effectuée par".
+2) Écrit un fichier texte nommé `requester_<timestamp>.txt` dans le dossier de sortie, contenant l’objet, l’ID du message et le texte extrait.
+
+Vous pouvez configurer le dossier de sortie via:
+- la GUI (`Settings` → `Output Folder`),
+- l’argument CLI `--output-dir`,
+- la variable d’environnement `OUTPUT_DIR`.
 
 ## Sécurité et respect
 - Le script ouvre automatiquement un lien reçu par email; utilisez-le uniquement pour votre propre compte et en comprenant l'impact.
