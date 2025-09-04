@@ -1,0 +1,14 @@
+# Environnements Python
+.venv/
+
+# Credentials OAuth
+credentials.json
+token.json
+
+# Bytecode / caches
+__pycache__/
+*.pyc
+
+# IDE
+.vscode/
+.idea/
