@@ -34,6 +34,43 @@ python -m playwright install --with-deps chromium
 3. Au premier lancement, une fenêtre de consentement s'ouvrira pour autoriser l'application à lire vos emails.
 4. Le jeton persistant sera stocké dans `token.json` (crée automatiquement).
 
+### Créer `credentials.json` (Google Cloud Console)
+
+Suivez ces étapes pour générer le fichier `credentials.json` requis pour l’authentification OAuth2:
+
+1) Allez sur Google Cloud Console: https://console.cloud.google.com/
+  - Créez un projet (ou sélectionnez-en un existant).
+
+2) Activez l’API Gmail:
+  - Menu « API & Services » → « Library » → recherchez « Gmail API » → cliquez « Enable ».
+
+3) Configurez l’écran de consentement OAuth (si pas déjà fait):
+  - Menu « API & Services » → « OAuth consent screen ».
+  - Type d’utilisateur: « External » (le plus simple pour un usage perso). Renseignez les champs requis (nom de l’appli, email, etc.).
+  - Ajoutez votre compte Google comme « Test user » si l’app est en mode test.
+  - Note: la portée Gmail utilisée par l’app est sensible (`https://www.googleapis.com/auth/gmail.modify`). En mode test, ajoutez votre compte dans les « Test users ».
+
+4) Créez les identifiants OAuth 2.0:
+  - Menu « API & Services » → « Credentials » → « Create Credentials » → « OAuth client ID ».
+  - Application type: choisissez « Desktop app » (recommandé).
+  - Cliquez « Create », puis « Download JSON ».
+
+5) Renommez le fichier téléchargé en `credentials.json` et placez-le:
+  - De préférence à la racine du projet (ou à côté du .exe si vous utilisez la version packagée),
+  - ou définissez la variable d’environnement `CREDENTIALS_PATH` avec le chemin absolu.
+
+Astuce / Variables utiles:
+- Pour le flux OAuth local, l’app utilise un serveur sur `localhost` (port par défaut `6969`). Vous pouvez changer le port si besoin:
+  ```pwsh
+  $env:OAUTH_LOCAL_SERVER_PORT = "8080"
+  python -m src.main once
+  ```
+- Si vous avez un client OAuth de type « Web » au lieu de « Desktop », vous devez ajouter une URI de redirection exacte dans GCP (ex: `http://localhost:8080/`) puis définir `OAUTH_LOCAL_SERVER_PORT` en conséquence (voir aussi la section « redirect_uri_mismatch » plus bas).
+- Pour la version exécutable (.exe), si `credentials.json` n’est pas trouvé automatiquement, définissez:
+  ```pwsh
+  $env:CREDENTIALS_PATH = "C:\\chemin\\vers\\credentials.json"
+  ```
+
 ## Utilisation
 
 - Exécuter une vérification unique (récents et nouveaux messages) :
