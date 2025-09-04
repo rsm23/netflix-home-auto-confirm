@@ -9,6 +9,7 @@ settings.json
 #logs
 logs.txt
 logs
+app.log
 
 # Bytecode / caches
 __pycache__/
