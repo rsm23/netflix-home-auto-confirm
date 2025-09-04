@@ -4,6 +4,8 @@
 # Credentials OAuth
 credentials.json
 token.json
+settings.json
+logs.txt
 
 # Bytecode / caches
 __pycache__/
