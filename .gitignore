@@ -18,3 +18,15 @@ __pycache__/
 # IDE
 .vscode/
 .idea/
+
+# Systèmes
+.DS_Store
+Thumbs.db
+desktop.ini
+$RECYCLE.BIN/
+ehthumbs.db
+
+# Fichiers de build
+build/
+*.spec
+dist/

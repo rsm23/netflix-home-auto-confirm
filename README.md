@@ -93,7 +93,7 @@ Un menu s’affiche sur l’icône: Start / Stop / Quit.
 Dans le menu "Settings", vous pouvez régler:
 - `Interval (s)` : l’intervalle de polling.
 - `Close Delay (s)` : le délai de fermeture de l’onglet après le clic Playwright.
-- `Output Folder` : le dossier où seront enregistrés les fichiers `.txt` contenant le texte "Demande effectuée par". Après changement, arrêtez puis redémarrez le watcher (Stop puis Start) pour appliquer.
+- `Output Folder` : le dossier où seront enregistrés les fichiers `.txt` contenant le texte "Demande effectuée par". Lors de la sauvegarde, si le watcher est actif, il est redémarré automatiquement pour appliquer les changements.
 
 ## Construire un .exe (Windows)
 
@@ -102,13 +102,16 @@ Nous recommandons PyInstaller pour packager un .exe autonome:
 ```pwsh
 .\.venv\Scripts\Activate.ps1
 pip install pyinstaller
-pyinstaller --noconsole --name confirm-netflix-house --add-data "credentials.json;." --hidden-import playwright --hidden-import bs4 --hidden-import googleapiclient --hidden-import google.oauth2 --hidden-import google_auth_oauthlib --hidden-import html5lib --hidden-import pystray --hidden-import PIL --collect-all playwright --collect-all bs4 --collect-all googleapiclient --collect-all google --collect-all google_auth_oauthlib --collect-all html5lib --collect-all pystray --collect-all PIL -m src.tray_app
+pyinstaller --noconsole --name confirm-netflix-house --add-data "credentials.json;." --hidden-import playwright --hidden-import bs4 --hidden-import googleapiclient --hidden-import google.oauth2 --hidden-import google_auth_oauthlib --hidden-import html5lib --hidden-import pystray --hidden-import PIL --collect-all playwright --collect-all bs4 --collect-all googleapiclient --collect-all google_auth_oauthlib --collect-all html5lib --collect-all pystray --collect-all PIL .\src\tray_app.py
 ```
 
 Notes:
 - `--noconsole` masque la console (GUI tray uniquement).
 - `--add-data "credentials.json;."` embarque vos credentials si vous le souhaitez; sinon, placez `credentials.json` à côté du .exe.
 - `--collect-all` rassemble les ressources/données nécessaires (Playwright, bs4, Google libs, etc.).
+- Si vous voyez un avertissement PyInstaller sur `google.api_core.operations_v1` et `ModuleNotFoundError: No module named 'grpc'`, deux options:
+  - (recommandé) laissez la commande telle quelle (nous ne collectons pas tout `google`), l'avertissement disparaît.
+  - ou installez le paquet gRPC: `pip install grpcio` si vous avez besoin de packager des modules Google utilisant gRPC.
 - Playwright: vous pouvez aussi installer les navigateurs sur la machine cible (au premier lancement si nécessaire).
 
 Le binaire sera dans `dist/confirm-netflix-house/confirm-netflix-house.exe`.
