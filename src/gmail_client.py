@@ -1,5 +1,6 @@
 import base64
 import os
+import sys
 import logging
 from typing import List, Optional, Tuple
 
@@ -16,9 +17,49 @@ SCOPES = ["https://www.googleapis.com/auth/gmail.modify"]
 DEFAULT_QUERY = 'from:info@account.netflix.com subject:"comment mettre à jour votre foyer Netflix" is:unread'
 
 
+def _resolve_credentials_path(preferred_path: Optional[str]) -> str:
+    """Trouve un chemin valide pour credentials.json en contexte normal ou PyInstaller.
+
+    Ordre de recherche:
+    - variable d'environnement CREDENTIALS_PATH (si définie et existante)
+    - chemin fourni (absolu ou relatif) si existant
+    - répertoire courant (credentials.json)
+    - répertoire de l'exécutable (si frozen)
+    - dossier temporaire de PyInstaller (sys._MEIPASS) si présent
+    - répertoire du module (src) et son parent
+    """
+    env_path = os.getenv("CREDENTIALS_PATH")
+    candidates: List[str] = []
+    if env_path:
+        candidates.append(env_path)
+    if preferred_path:
+        candidates.append(os.path.abspath(preferred_path))
+    # cwd
+    candidates.append(os.path.join(os.getcwd(), "credentials.json"))
+    # executable dir (frozen)
+    if getattr(sys, "frozen", False):
+        exe_dir = os.path.dirname(sys.executable)
+        candidates.append(os.path.join(exe_dir, "credentials.json"))
+        if hasattr(sys, "_MEIPASS"):
+            candidates.append(os.path.join(getattr(sys, "_MEIPASS"), "credentials.json"))
+    # module dir
+    mod_dir = os.path.dirname(os.path.abspath(__file__))
+    candidates.append(os.path.join(mod_dir, "credentials.json"))
+    candidates.append(os.path.join(os.path.dirname(mod_dir), "credentials.json"))
+
+    for p in candidates:
+        try:
+            if p and os.path.exists(p):
+                return p
+        except Exception:
+            continue
+    # Retourne le préféré ou le nom par défaut (pour l'erreur explicite plus loin)
+    return preferred_path or "credentials.json"
+
+
 class GmailWatcher:
     def __init__(self, credentials_path: str = "credentials.json", token_path: str = "token.json") -> None:
-        self.credentials_path = credentials_path
+        self.credentials_path = _resolve_credentials_path(credentials_path)
         self.token_path = token_path
         self.creds: Optional[Credentials] = None
         self.service = None
@@ -58,6 +99,9 @@ class GmailWatcher:
                         raise
             else:
                 logging.info("Aucun token valide trouvé, lancement du flux OAuth local…")
+                # Recalcul défensif au cas où l'environnement change
+                self.credentials_path = _resolve_credentials_path(self.credentials_path)
+                logging.info("Utilisation du credentials.json: %s", self.credentials_path)
                 flow = InstalledAppFlow.from_client_secrets_file(self.credentials_path, SCOPES)
                 # Permet d'imposer un port fixe si vous utilisez un client OAuth de type "Web"
                 # avec une redirection autorisée spécifique (ex: http://localhost:8080/)

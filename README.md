@@ -148,7 +148,19 @@ Variables utiles pour le mode service/tray:
   - `GMAIL_QUERY` : surcharge la requête Gmail (par défaut : `from:info@account.netflix.com subject:"comment mettre à jour votre foyer Netflix"`).
   - `POLL_INTERVAL` : intervalle de polling par défaut en secondes.
   - `OUTPUT_DIR` : dossier de sortie par défaut pour enregistrer les fichiers `.txt` (peut aussi être défini via `--output-dir` en CLI ou dans la GUI Settings).
+  - `CREDENTIALS_PATH` : chemin absolu vers `credentials.json` si l’exécutable ne le trouve pas automatiquement.
   - Note: par défaut, la requête inclut `is:unread` et les messages cliqués sont marqués comme lus.
+
+### Où placer `credentials.json` (pour l'exe)
+Au démarrage, l’app cherche `credentials.json` dans l’ordre:
+1) `CREDENTIALS_PATH` (si défini et existant)
+2) chemin fourni à l’objet `GmailWatcher` (interne)
+3) répertoire courant (cwd)
+4) dossier de l’exécutable (si PyInstaller)
+5) dossier temporaire PyInstaller (`_MEIPASS`)
+6) dossier du module `src` et son parent
+
+Le plus simple: placez `credentials.json` à côté de l’exe, ou définissez `CREDENTIALS_PATH`.
 
 ### Export du texte "Demande effectuée par"
 Lorsqu’un clic réussi est effectué sur le bouton de confirmation Netflix via Playwright, l’application:
