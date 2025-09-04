@@ -34,9 +34,9 @@ class GmailWatcher:
                     # Rafraîchissement impossible (token révoqué/expiré sans refresh valide) -> reconsentir
                     flow = InstalledAppFlow.from_client_secrets_file(self.credentials_path, SCOPES)
                     try:
-                        port = int(os.getenv("OAUTH_LOCAL_SERVER_PORT", "0"))
+                        port = int(os.getenv("OAUTH_LOCAL_SERVER_PORT", "6969"))
                     except ValueError:
-                        port = 0
+                        port = 6969
                     try:
                         creds = flow.run_local_server(port=port)
                     except Exception as e:
@@ -54,9 +54,9 @@ class GmailWatcher:
                 # Permet d'imposer un port fixe si vous utilisez un client OAuth de type "Web"
                 # avec une redirection autorisée spécifique (ex: http://localhost:8080/)
                 try:
-                    port = int(os.getenv("OAUTH_LOCAL_SERVER_PORT", "0"))
+                    port = int(os.getenv("OAUTH_LOCAL_SERVER_PORT", "6969"))
                 except ValueError:
-                    port = 0
+                    port = 6969
                 try:
                     creds = flow.run_local_server(port=port)
                 except Exception as e:

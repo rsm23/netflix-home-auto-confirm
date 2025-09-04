@@ -87,9 +87,14 @@ class TrayApp:
         self.auto_click = True
         self.close_delay = int(os.getenv("AUTO_CLOSE_DELAY", "10"))
         self.output_dir: Optional[str] = os.getenv("OUTPUT_DIR")
+        # Port OAuth local (par défaut 6969)
+        try:
+            self.oauth_port: int = int(os.getenv("OAUTH_LOCAL_SERVER_PORT", "6969"))
+        except ValueError:
+            self.oauth_port = 6969
 
         self.icon.menu = pystray.Menu(
-            item(lambda _item: f"Status: {'RUNNING' if self.worker and self.worker.is_alive() else 'STOPPED'}", None, enabled=False),
+            item(lambda _item: f"Status: {'RUNNING' if self.worker and self.worker.is_alive() else 'STOPPED'} | OAuth Port: {self.oauth_port}", None, enabled=False),
             item("Connect", self.connect),
             item("Disconnect", self.disconnect),
             item("Settings", self.open_settings),
@@ -114,6 +119,8 @@ class TrayApp:
         if self.worker and self.worker.is_alive():
             return
         self.stop_event.clear()
+        # Appliquer le port OAuth choisi dans l'environnement
+        os.environ["OAUTH_LOCAL_SERVER_PORT"] = str(self.oauth_port)
         self.worker = WatcherThread(
             stop_event=self.stop_event,
             interval=self.interval,
@@ -139,6 +146,8 @@ class TrayApp:
     def connect(self, icon: Optional[pystray.Icon] = None, item_clicked: Optional[item] = None):
         """Force un appel aux APIs qui déclenchera le flux OAuth si nécessaire."""
         try:
+            # Appliquer le port OAuth choisi dans l'environnement
+            os.environ["OAUTH_LOCAL_SERVER_PORT"] = str(self.oauth_port)
             from .gmail_client import GmailWatcher
             gw = GmailWatcher()
             # Appel léger: récupérer 0 mail déclenche juste l'auth si besoin
@@ -188,17 +197,22 @@ class TrayApp:
         delay_entry = ttk.Entry(frm, textvariable=delay_var, width=10)
         delay_entry.grid(row=1, column=1, sticky="w", padx=5, pady=5)
 
-        ttk.Label(frm, text="Output Folder").grid(row=2, column=0, sticky="w", padx=5, pady=5)
-        out_var = tk.StringVar(value=str(self.output_dir or ""))
-        out_entry = ttk.Entry(frm, textvariable=out_var, width=40)
-        out_entry.grid(row=2, column=1, sticky="w", padx=5, pady=5)
+    ttk.Label(frm, text="Output Folder").grid(row=2, column=0, sticky="w", padx=5, pady=5)
+    out_var = tk.StringVar(value=str(self.output_dir or ""))
+    out_entry = ttk.Entry(frm, textvariable=out_var, width=40)
+    out_entry.grid(row=2, column=1, sticky="w", padx=5, pady=5)
 
         def browse_folder():
             folder = filedialog.askdirectory()
             if folder:
                 out_var.set(folder)
 
-        ttk.Button(frm, text="Browse...", command=browse_folder).grid(row=2, column=2, sticky="w", padx=5, pady=5)
+    ttk.Button(frm, text="Browse...", command=browse_folder).grid(row=2, column=2, sticky="w", padx=5, pady=5)
+
+    ttk.Label(frm, text="OAuth Port").grid(row=3, column=0, sticky="w", padx=5, pady=5)
+    oauth_var = tk.StringVar(value=str(self.oauth_port))
+    oauth_entry = ttk.Entry(frm, textvariable=oauth_var, width=10)
+    oauth_entry.grid(row=3, column=1, sticky="w", padx=5, pady=5)
 
         def save_and_close():
             try:
@@ -210,15 +224,22 @@ class TrayApp:
                 self.close_delay = new_delay
                 new_out = out_var.get().strip()
                 self.output_dir = new_out or None
+                # Port OAuth
+                new_port = int(oauth_var.get())
+                if new_port <= 0 or new_port > 65535:
+                    raise ValueError("Port invalide")
+                self.oauth_port = new_port
+                # Répercuter immédiatement dans l'environnement
+                os.environ["OAUTH_LOCAL_SERVER_PORT"] = str(self.oauth_port)
                 messagebox.showinfo("OK", "Paramètres sauvegardés. Redémarrez le watcher pour appliquer.")
                 on_close()
             except Exception:
                 messagebox.showerror("Erreur", "Veuillez entrer des nombres valides.")
 
-            buttons = ttk.Frame(frm)
-            buttons.grid(row=3, column=0, columnspan=3, pady=10)
-            ttk.Button(buttons, text="Save", command=save_and_close).grid(row=0, column=0, padx=5)
-            ttk.Button(buttons, text="Cancel", command=on_close).grid(row=0, column=1, padx=5)
+        buttons = ttk.Frame(frm)
+        buttons.grid(row=4, column=0, columnspan=3, pady=10)
+        ttk.Button(buttons, text="Save", command=save_and_close).grid(row=0, column=0, padx=5)
+        ttk.Button(buttons, text="Cancel", command=on_close).grid(row=0, column=1, padx=5)
 
         win.mainloop()
 
