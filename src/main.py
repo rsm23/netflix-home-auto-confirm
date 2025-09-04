@@ -6,7 +6,12 @@ import logging
 import webbrowser
 from typing import Optional, Tuple
 
-from .gmail_client import GmailWatcher
+try:
+    # Contexte package
+    from .gmail_client import GmailWatcher  # type: ignore
+except Exception:
+    # Contexte script/pyinstaller
+    from gmail_client import GmailWatcher  # type: ignore
 
 # Charger un éventuel .env
 try:

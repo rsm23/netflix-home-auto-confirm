@@ -105,6 +105,16 @@ pip install pyinstaller
 pyinstaller --noconsole --name confirm-netflix-house --add-data "credentials.json;." --hidden-import playwright --hidden-import bs4 --hidden-import googleapiclient --hidden-import google.oauth2 --hidden-import google_auth_oauthlib --hidden-import html5lib --hidden-import pystray --hidden-import PIL --collect-all playwright --collect-all bs4 --collect-all googleapiclient --collect-all google_auth_oauthlib --collect-all html5lib --collect-all pystray --collect-all PIL .\src\tray_app.py
 ```
 
+### Nettoyage (avant rebuild)
+
+En cas de rebuild, vous pouvez nettoyer les artefacts précédents:
+
+```pwsh
+Remove-Item -Recurse -Force .\build -ErrorAction SilentlyContinue
+Remove-Item -Recurse -Force .\dist -ErrorAction SilentlyContinue
+Remove-Item .\confirm-netflix-house.spec -ErrorAction SilentlyContinue
+```
+
 Notes:
 - `--noconsole` masque la console (GUI tray uniquement).
 - `--add-data "credentials.json;."` embarque vos credentials si vous le souhaitez; sinon, placez `credentials.json` à côté du .exe.

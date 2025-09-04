@@ -19,8 +19,13 @@ try:
 except Exception:
     pass
 
-# Importer les fonctions de l'app
-from .main import process_once, _now_ms
+# Importer les fonctions de l'app (compatible package et exécutable PyInstaller)
+try:
+    # Contexte package (python -m src.tray_app)
+    from .main import process_once, _now_ms  # type: ignore
+except Exception:
+    # Contexte script/pyinstaller (imports absolus)
+    from main import process_once, _now_ms  # type: ignore
 
 
 def _make_image(color_bg=(30, 144, 255), color_fg=(255, 255, 255)) -> Image.Image:
