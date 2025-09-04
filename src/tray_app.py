@@ -191,28 +191,29 @@ class TrayApp:
         interval_var = tk.StringVar(value=str(self.interval))
         interval_entry = ttk.Entry(frm, textvariable=interval_var, width=10)
         interval_entry.grid(row=0, column=1, sticky="w", padx=5, pady=5)
-
+        # Close delay
         ttk.Label(frm, text="Close Delay (s)").grid(row=1, column=0, sticky="w", padx=5, pady=5)
         delay_var = tk.StringVar(value=str(self.close_delay))
         delay_entry = ttk.Entry(frm, textvariable=delay_var, width=10)
         delay_entry.grid(row=1, column=1, sticky="w", padx=5, pady=5)
-
-    ttk.Label(frm, text="Output Folder").grid(row=2, column=0, sticky="w", padx=5, pady=5)
-    out_var = tk.StringVar(value=str(self.output_dir or ""))
-    out_entry = ttk.Entry(frm, textvariable=out_var, width=40)
-    out_entry.grid(row=2, column=1, sticky="w", padx=5, pady=5)
+        # Output folder
+        ttk.Label(frm, text="Output Folder").grid(row=2, column=0, sticky="w", padx=5, pady=5)
+        out_var = tk.StringVar(value=str(self.output_dir or ""))
+        out_entry = ttk.Entry(frm, textvariable=out_var, width=40)
+        out_entry.grid(row=2, column=1, sticky="w", padx=5, pady=5)
 
         def browse_folder():
             folder = filedialog.askdirectory()
             if folder:
                 out_var.set(folder)
 
-    ttk.Button(frm, text="Browse...", command=browse_folder).grid(row=2, column=2, sticky="w", padx=5, pady=5)
+        ttk.Button(frm, text="Browse...", command=browse_folder).grid(row=2, column=2, sticky="w", padx=5, pady=5)
 
-    ttk.Label(frm, text="OAuth Port").grid(row=3, column=0, sticky="w", padx=5, pady=5)
-    oauth_var = tk.StringVar(value=str(self.oauth_port))
-    oauth_entry = ttk.Entry(frm, textvariable=oauth_var, width=10)
-    oauth_entry.grid(row=3, column=1, sticky="w", padx=5, pady=5)
+        # OAuth port
+        ttk.Label(frm, text="OAuth Port").grid(row=3, column=0, sticky="w", padx=5, pady=5)
+        oauth_var = tk.StringVar(value=str(self.oauth_port))
+        oauth_entry = ttk.Entry(frm, textvariable=oauth_var, width=10)
+        oauth_entry.grid(row=3, column=1, sticky="w", padx=5, pady=5)
 
         def save_and_close():
             try:
@@ -240,7 +241,6 @@ class TrayApp:
         buttons.grid(row=4, column=0, columnspan=3, pady=10)
         ttk.Button(buttons, text="Save", command=save_and_close).grid(row=0, column=0, padx=5)
         ttk.Button(buttons, text="Cancel", command=on_close).grid(row=0, column=1, padx=5)
-
         win.mainloop()
 
     def quit(self, icon: Optional[pystray.Icon] = None, item_clicked: Optional[item] = None):
