@@ -69,7 +69,19 @@ class GmailWatcher:
         creds = None
         if os.path.exists(self.token_path):
             logging.info("token.json trouvé, tentative de chargement…")
-            creds = Credentials.from_authorized_user_file(self.token_path, SCOPES)
+            try:
+                creds = Credentials.from_authorized_user_file(self.token_path, SCOPES)
+            except ValueError as e:
+                # token.json mal formé ou sans refresh_token -> forcer une nouvelle autorisation
+                logging.warning(
+                    "token.json invalide (%s). Suppression et relance du flux OAuth avec consent forcé…",
+                    e,
+                )
+                try:
+                    os.remove(self.token_path)
+                except Exception:
+                    pass
+                creds = None
         if not creds or not creds.valid:
             if creds and creds.expired and creds.refresh_token:
                 logging.info("Token expiré, tentative de rafraîchissement…")
@@ -86,7 +98,13 @@ class GmailWatcher:
                         port = 6969
                     try:
                         logging.info("Ouverture du serveur local OAuth sur le port %s", port)
-                        creds = flow.run_local_server(port=port)
+                        # Forcer un refresh_token en mode offline + consent
+                        creds = flow.run_local_server(
+                            port=port,
+                            access_type="offline",
+                            prompt="consent",
+                            include_granted_scopes="true",
+                        )
                     except Exception as e:
                         msg = str(e)
                         if "redirect_uri_mismatch" in msg or "MismatchingRedirectURIError" in msg:
@@ -111,7 +129,13 @@ class GmailWatcher:
                     port = 6969
                 try:
                     logging.info("Ouverture du serveur local OAuth sur le port %s", port)
-                    creds = flow.run_local_server(port=port)
+                    # Forcer un refresh_token en mode offline + consent
+                    creds = flow.run_local_server(
+                        port=port,
+                        access_type="offline",
+                        prompt="consent",
+                        include_granted_scopes="true",
+                    )
                 except Exception as e:
                     msg = str(e)
                     if "redirect_uri_mismatch" in msg or "MismatchingRedirectURIError" in msg:
@@ -122,6 +146,23 @@ class GmailWatcher:
                             "et définissez OAUTH_LOCAL_SERVER_PORT=8080."
                         ) from e
                     raise
+            # A ce stade on peut encore se retrouver sans refresh_token (comptes/clients particuliers)
+            if creds and not getattr(creds, "refresh_token", None):
+                logging.warning(
+                    "Les informations d'authentification ne contiennent pas de refresh_token. "
+                    "Relance du flux OAuth avec 'prompt=consent' pour l'obtenir…"
+                )
+                flow = InstalledAppFlow.from_client_secrets_file(self.credentials_path, SCOPES)
+                try:
+                    port = int(os.getenv("OAUTH_LOCAL_SERVER_PORT", "6969"))
+                except ValueError:
+                    port = 6969
+                creds = flow.run_local_server(
+                    port=port,
+                    access_type="offline",
+                    prompt="consent",
+                    include_granted_scopes="true",
+                )
             with open(self.token_path, "w") as token:
                 token.write(creds.to_json())
             logging.info("token.json enregistré.")
