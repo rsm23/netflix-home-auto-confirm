@@ -250,6 +250,7 @@ class TrayApp:
 
         def save_and_close():
             try:
+                was_running = bool(self.worker and self.worker.is_alive())
                 new_interval = int(interval_var.get())
                 new_delay = int(delay_var.get())
                 if new_interval <= 0 or new_delay < 0:
@@ -280,7 +281,21 @@ class TrayApp:
                 self._save_config()
                 # Reconfigurer le logging maintenant
                 self._setup_logging()
-                messagebox.showinfo("OK", "Paramètres sauvegardés. Redémarrez le watcher pour appliquer.")
+                # Redémarrer automatiquement le watcher si nécessaire
+                if was_running:
+                    logging.info("Redémarrage du watcher suite au changement de configuration…")
+                    try:
+                        self.stop()
+                        # Petite latence pour laisser le thread se terminer proprement
+                        time.sleep(0.2)
+                        self.start()
+                        message = "Paramètres sauvegardés. Le watcher a été redémarré."
+                    except Exception as e:
+                        logging.exception("Echec du redémarrage du watcher: %s", e)
+                        message = "Paramètres sauvegardés, mais le redémarrage automatique a échoué. Redémarrez manuellement."
+                else:
+                    message = "Paramètres sauvegardés."
+                messagebox.showinfo("OK", message)
                 on_close()
             except Exception:
                 messagebox.showerror("Erreur", "Veuillez entrer des nombres valides.")

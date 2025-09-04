@@ -2,6 +2,7 @@ import argparse
 import os
 import sys
 import time
+import logging
 import webbrowser
 from typing import Optional, Tuple
 
@@ -16,7 +17,7 @@ except Exception:
 
 
 def open_update_link(link: str, open_once: bool = False, auto_click: bool = False, close_delay: int = 10) -> None:
-    print(f"Ouverture du lien: {link}")
+    logging.info("Ouverture du lien: %s", link)
     if auto_click:
         # Utilise Playwright pour ouvrir, cliquer, puis fermer après délai
         try:
@@ -30,7 +31,8 @@ def open_update_link(link: str, open_once: bool = False, auto_click: bool = Fals
                     "  python -m playwright install --with-deps chromium\n"
                 ) from e
             raise
-        confirm_netflix_primary_location(link, close_delay_seconds=close_delay)
+        ok = confirm_netflix_primary_location(link, close_delay_seconds=close_delay)
+        logging.info("Automatisation Playwright terminée avec succès=%s", ok)
     else:
         webbrowser.open(link, new=2)
     if open_once:
@@ -53,8 +55,9 @@ def process_once(
     watcher = GmailWatcher()
     ids = watcher.search_messages(query=query, max_results=10)
     if not ids:
-        print("Aucun message correspondant trouvé.")
+        logging.info("Aucun message correspondant trouvé.")
         return 1, False, None
+    logging.info("%s message(s) candidat(s) à analyser.", len(ids))
     for mid in ids:
         msg = watcher.get_message_raw(mid)
         # Filtrer par date de réception (internalDate en ms depuis epoch)
@@ -62,8 +65,10 @@ def process_once(
             internal_ms = int(msg.get('internalDate'))
         except (TypeError, ValueError):
             internal_ms = 0
+        logging.info("Analyse message id=%s | internalDate=%s | ancre=%s", mid, internal_ms, anchor_ts_ms)
         if anchor_ts_ms is not None and internal_ms <= anchor_ts_ms:
             # Ignorer les messages reçus avant/ancré
+            logging.info("Ignoré (avant l'ancre): id=%s", mid)
             continue
         link = watcher.extract_update_link_from_message(msg)
         if debug and not link:
@@ -71,10 +76,12 @@ def process_once(
             headers = {h['name'].lower(): h['value'] for h in msg.get('payload', {}).get('headers', [])}
             subject = headers.get('subject', '(sans sujet)')
             sender = headers.get('from', '(inconnu)')
-            print(f"[DEBUG] Pas de lien trouvé dans: {subject} | {sender} | id={mid}")
+            logging.info("Pas de lien trouvé dans: subject=%s | from=%s | id=%s", subject, sender, mid)
         if link:
+            logging.info("Lien Netflix détecté pour id=%s: %s", mid, link)
             last = os.getenv("LAST_OPENED_LINK")
             if open_once and last == link:
+                logging.info("Lien déjà ouvert précédemment et open_once actif, on saute: %s", link)
                 continue
             # Ouvre et tente le clic via Playwright (si activé)
             success = False
@@ -82,8 +89,9 @@ def process_once(
                 try:
                     from .automation import confirm_netflix_primary_location  # lazy import
                     success = confirm_netflix_primary_location(link, close_delay_seconds=close_delay)
+                    logging.info("Résultat du clic Playwright: %s", success)
                 except Exception as e:
-                    print(f"[WARN] Automatisation Playwright échouée: {e}")
+                    logging.warning("Automatisation Playwright échouée: %s", e)
             else:
                 open_update_link(link, open_once=open_once, auto_click=False, close_delay=close_delay)
                 success = True  # Considérer le clic externe comme succès logique d'ouverture
@@ -103,24 +111,25 @@ def process_once(
                         f.write(f"Message-ID: {mid}\n")
                         f.write("--- Demande effectuée par ---\n")
                         f.write((requester or "(non trouvé)") + "\n")
-                    print(f"[INFO] Détails sauvegardés dans {out_path}")
+                    logging.info("Détails sauvegardés dans %s", out_path)
                 except Exception as e:
-                    print(f"[WARN] Impossible d'extraire/écrire le détails demandeur: {e}")
+                    logging.warning("Impossible d'extraire/écrire le détails demandeur: %s", e)
 
             # Marquer le message comme lu après un clic
             try:
                 watcher.mark_as_read(mid)
             except Exception as e:
-                print(f"[WARN] Impossible de marquer le message comme lu: {e}")
+                logging.warning("Impossible de marquer le message comme lu: %s", e)
             # Mettre à jour l'ancre au moment courant pour éviter les anciens emails
             new_anchor = _now_ms()
+            logging.info("Traitement terminé pour id=%s, nouvelle ancre=%s", mid, new_anchor)
             return 0, True, new_anchor
-    print("Aucun lien '/update-primary-location' trouvé dans les messages récents.")
+    logging.info("Aucun lien '/update-primary-location' trouvé dans les messages récents.")
     return 2, False, None
 
 
 def watch_loop(interval: int = 60, query: Optional[str] = None, open_once: bool = False, debug: bool = False, auto_click: bool = False, close_delay: int = 10, output_dir: Optional[str] = None) -> int:
-    print(f"Surveillance démarrée. Intervalle: {interval}s")
+    logging.info("Surveillance démarrée. Intervalle: %ss | auto_click=%s | close_delay=%ss | output_dir=%s", interval, auto_click, close_delay, output_dir)
     # Ancrage à l'ouverture de l'application: ignorer les anciens emails
     anchor_ts_ms = _now_ms()
     while True:
@@ -136,13 +145,12 @@ def watch_loop(interval: int = 60, query: Optional[str] = None, open_once: bool 
             )
             if clicked and new_anchor is not None:
                 anchor_ts_ms = new_anchor
-            # Optionnel: log du code
-            # print(f"Cycle terminé avec code {code}")
+            logging.info("Cycle terminé avec code=%s | clicked=%s | new_anchor=%s", code, clicked, new_anchor)
         except KeyboardInterrupt:
-            print("Arrêt par l'utilisateur.")
+            logging.info("Arrêt par l'utilisateur.")
             return 0
         except Exception as e:
-            print(f"Erreur dans la boucle: {e}")
+            logging.exception("Erreur dans la boucle: %s", e)
         time.sleep(interval)
 
 

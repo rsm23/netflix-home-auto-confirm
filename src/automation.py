@@ -1,6 +1,7 @@
 import os
 import re
 import time
+import logging
 from typing import Optional
 
 from playwright.sync_api import sync_playwright, TimeoutError as PlaywrightTimeoutError
@@ -49,6 +50,7 @@ def confirm_netflix_primary_location(
     """
     channel = channel or _default_browser_channel()
     user_data_dir = user_data_dir or _default_user_data_dir(channel)
+    logging.info("Lancement Playwright: channel=%s | user_data_dir=%s | url=%s", channel, user_data_dir, url)
 
     with sync_playwright() as p:
         # Sélectionner le moteur chromium
@@ -63,17 +65,20 @@ def confirm_netflix_primary_location(
         try:
             if user_data_dir:
                 # Contexte persistant -> réutilise le profil existant (cookies)
+                logging.info("Ouverture d'un contexte persistant avec user_data_dir=%s", user_data_dir)
                 context = browser_type.launch_persistent_context(
                     user_data_dir=user_data_dir,
                     **launch_kwargs,
                 )
             else:
                 # Contexte non persistant (peut nécessiter une reconnexion Netflix)
+                logging.info("Ouverture d'un navigateur non persistant")
                 browser = browser_type.launch(**launch_kwargs)
                 context = browser.new_context()
 
             page = context.new_page()
             page.set_default_timeout(nav_timeout_ms)
+            logging.info("Navigation vers l'URL Netflix…")
             page.goto(url, wait_until="load")
 
             # Chercher le bouton par data attribute
@@ -83,6 +88,7 @@ def confirm_netflix_primary_location(
                 btn.wait_for(state="visible", timeout=click_timeout_ms)
                 btn.click()
                 found = True
+                logging.info("Bouton [data-uia='set-primary-location-action'] cliqué")
             except PlaywrightTimeoutError:
                 pass
 
@@ -93,23 +99,27 @@ def confirm_netflix_primary_location(
                 try:
                     page.get_by_role("button", name=re_txt).first.click(timeout=click_timeout_ms)
                     found = True
+                    logging.info("Bouton par texte cliqué (role=button)")
                 except PlaywrightTimeoutError:
                     try:
                         page.get_by_role("link", name=re_txt).first.click(timeout=click_timeout_ms)
                         found = True
+                        logging.info("Lien par texte cliqué (role=link)")
                     except PlaywrightTimeoutError:
                         pass
 
             if not found:
-                print("[INFO] Bouton de confirmation introuvable dans le délai imparti; la page reste ouverte.")
+                logging.info("Bouton de confirmation introuvable dans le délai imparti; la page reste ouverte.")
                 return False
 
             # Laisser l'action se compléter puis fermer
+            logging.info("Attente de %ss avant fermeture…", max(0, close_delay_seconds))
             time.sleep(max(0, close_delay_seconds))
             return True
         finally:
             try:
                 if context:
+                    logging.info("Fermeture du contexte navigateur")
                     context.close()
             except Exception:
                 pass

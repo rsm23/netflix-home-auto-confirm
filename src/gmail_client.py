@@ -1,5 +1,6 @@
 import base64
 import os
+import logging
 from typing import List, Optional, Tuple
 
 from bs4 import BeautifulSoup
@@ -23,21 +24,27 @@ class GmailWatcher:
         self.service = None
 
     def _load_credentials(self) -> Credentials:
+        logging.info("Chargement des identifiants OAuth (token: %s, creds: %s)", self.token_path, self.credentials_path)
         creds = None
         if os.path.exists(self.token_path):
+            logging.info("token.json trouvé, tentative de chargement…")
             creds = Credentials.from_authorized_user_file(self.token_path, SCOPES)
         if not creds or not creds.valid:
             if creds and creds.expired and creds.refresh_token:
+                logging.info("Token expiré, tentative de rafraîchissement…")
                 try:
                     creds.refresh(Request())
+                    logging.info("Rafraîchissement du token réussi.")
                 except Exception:
                     # Rafraîchissement impossible (token révoqué/expiré sans refresh valide) -> reconsentir
+                    logging.warning("Rafraîchissement impossible, lancement du flux OAuth local pour reconsentir…")
                     flow = InstalledAppFlow.from_client_secrets_file(self.credentials_path, SCOPES)
                     try:
                         port = int(os.getenv("OAUTH_LOCAL_SERVER_PORT", "6969"))
                     except ValueError:
                         port = 6969
                     try:
+                        logging.info("Ouverture du serveur local OAuth sur le port %s", port)
                         creds = flow.run_local_server(port=port)
                     except Exception as e:
                         msg = str(e)
@@ -50,6 +57,7 @@ class GmailWatcher:
                             ) from e
                         raise
             else:
+                logging.info("Aucun token valide trouvé, lancement du flux OAuth local…")
                 flow = InstalledAppFlow.from_client_secrets_file(self.credentials_path, SCOPES)
                 # Permet d'imposer un port fixe si vous utilisez un client OAuth de type "Web"
                 # avec une redirection autorisée spécifique (ex: http://localhost:8080/)
@@ -58,6 +66,7 @@ class GmailWatcher:
                 except ValueError:
                     port = 6969
                 try:
+                    logging.info("Ouverture du serveur local OAuth sur le port %s", port)
                     creds = flow.run_local_server(port=port)
                 except Exception as e:
                     msg = str(e)
@@ -71,6 +80,7 @@ class GmailWatcher:
                     raise
             with open(self.token_path, "w") as token:
                 token.write(creds.to_json())
+            logging.info("token.json enregistré.")
         self.creds = creds
         return creds
 
@@ -78,22 +88,34 @@ class GmailWatcher:
         if self.service is None:
             creds = self._load_credentials()
             self.service = build("gmail", "v1", credentials=creds, cache_discovery=False)
+            logging.info("Client Gmail initialisé.")
         return self.service
 
     def search_messages(self, query: Optional[str] = None, max_results: int = 10) -> List[str]:
         service = self._ensure_service()
         q = query or os.getenv("GMAIL_QUERY") or DEFAULT_QUERY
         try:
+            logging.info("Recherche des messages avec la requête: %s (max_results=%s)", q, max_results)
             results = service.users().messages().list(userId="me", q=q, maxResults=max_results).execute()
             messages = results.get("messages", [])
-            return [m["id"] for m in messages]
+            ids = [m["id"] for m in messages]
+            logging.info("%s message(s) retourné(s) par la recherche.", len(ids))
+            return ids
         except HttpError as e:
             raise RuntimeError(f"Erreur lors de la recherche Gmail: {e}")
 
     def get_message_raw(self, message_id: str) -> dict:
         service = self._ensure_service()
         try:
+            logging.info("Récupération du message id=%s", message_id)
             msg = service.users().messages().get(userId="me", id=message_id, format="full").execute()
+            try:
+                headers = {h['name'].lower(): h['value'] for h in msg.get('payload', {}).get('headers', [])}
+                subject = headers.get('subject', '(sans sujet)')
+                sender = headers.get('from', '(inconnu)')
+                logging.info("Message récupéré: subject=%s | from=%s | id=%s", subject, sender, message_id)
+            except Exception:
+                pass
             return msg
         except HttpError as e:
             raise RuntimeError(f"Erreur lors de la récupération du message {message_id}: {e}")
@@ -106,6 +128,7 @@ class GmailWatcher:
                 id=message_id,
                 body={"removeLabelIds": ["UNREAD"]},
             ).execute()
+            logging.info("Message marqué comme lu: id=%s", message_id)
         except HttpError as e:
             raise RuntimeError(f"Erreur lors du marquage en lu du message {message_id}: {e}")
 
@@ -143,12 +166,17 @@ class GmailWatcher:
             body = payload.get('body', {})
             if body:
                 add_part(mime, body)
+        try:
+            logging.info("Collecte des parties du message: %s partie(s) trouvée(s).", len(parts))
+        except Exception:
+            pass
         return parts
 
     def extract_update_link_from_message(self, msg: dict) -> Optional[str]:
         payload = msg.get('payload', {})
         message_id = msg.get('id')
         parts = self._gather_parts(payload, message_id)
+        logging.info("Extraction du lien d'update: %s partie(s) collectée(s).", len(parts))
 
         # Parcourir HTML d'abord, puis texte
         html_candidates: List[str] = []
@@ -169,6 +197,7 @@ class GmailWatcher:
             for a in soup.find_all('a', href=True):
                 href = a['href']
                 if '/update-primary-location' in href:
+                    logging.info("Lien '/update-primary-location' trouvé dans HTML: %s", href)
                     return href
         # Fallback texte brut: capturer URLs
         import re
@@ -178,7 +207,9 @@ class GmailWatcher:
                 if '/update-primary-location' in url:
                     # Nettoyage basique si traînent des ponctuations
                     url = url.rstrip(").,>]')\"")
+                    logging.info("Lien '/update-primary-location' trouvé dans texte: %s", url)
                     return url
+        logging.info("Aucun lien '/update-primary-location' trouvé dans le message id=%s", message_id)
         return None
 
     @staticmethod
@@ -218,5 +249,7 @@ class GmailWatcher:
                 if not txt:
                     continue
                 if 'demande effectuée par' in txt.lower():
+                    logging.info("Texte 'Demande effectuée par' trouvé: %s", txt)
                     return txt
+        logging.info("Texte 'Demande effectuée par' non trouvé dans le message id=%s", msg.get('id'))
         return None
