@@ -5,6 +5,7 @@ import logging
 from typing import Optional
 
 from playwright.sync_api import sync_playwright, TimeoutError as PlaywrightTimeoutError
+from .config import CONFIRM_BUTTON_SELECTOR, CONFIRM_TEXT_RE
 
 
 def _default_browser_channel() -> Optional[str]:
@@ -81,8 +82,8 @@ def confirm_netflix_primary_location(
             logging.info("Navigation vers l'URL Netflix…")
             page.goto(url, wait_until="load")
 
-            # Chercher le bouton par data attribute
-            btn = page.locator('[data-uia="set-primary-location-action"]')
+            # Chercher le bouton par sélecteur configurable (data-uia)
+            btn = page.locator(CONFIRM_BUTTON_SELECTOR)
             found = False
             try:
                 btn.wait_for(state="visible", timeout=click_timeout_ms)
@@ -95,7 +96,7 @@ def confirm_netflix_primary_location(
             if not found:
                 # Chercher par texte
                 # Essayer rôle bouton puis lien
-                re_txt = re.compile(r"Confirmer\s+la\s+mise\s+à\s+jour", re.I)
+                re_txt = CONFIRM_TEXT_RE
                 try:
                     page.get_by_role("button", name=re_txt).first.click(timeout=click_timeout_ms)
                     found = True

@@ -5,6 +5,7 @@ import logging
 from typing import List, Optional, Tuple
 
 from bs4 import BeautifulSoup
+from .config import DEFAULT_GMAIL_QUERY, LINK_SUBSTRINGS
 from google.auth.transport.requests import Request
 from google.oauth2.credentials import Credentials
 from google_auth_oauthlib.flow import InstalledAppFlow
@@ -19,7 +20,7 @@ SCOPES = ["https://www.googleapis.com/auth/gmail.modify"]
 # retourné est un superset et la lib google gère les permissions effectives.
 os.environ.setdefault("OAUTHLIB_RELAX_TOKEN_SCOPE", "1")
 
-DEFAULT_QUERY = 'from:info@account.netflix.com subject:"comment mettre à jour votre foyer Netflix" is:unread'
+DEFAULT_QUERY = DEFAULT_GMAIL_QUERY
 
 
 def _resolve_credentials_path(preferred_path: Optional[str]) -> str:
@@ -68,6 +69,7 @@ class GmailWatcher:
         self.token_path = token_path
         self.creds: Optional[Credentials] = None
         self.service = None
+        self._label_cache: dict = {}
 
     def _load_credentials(self) -> Credentials:
         logging.info("Chargement des identifiants OAuth (token: %s, creds: %s)", self.token_path, self.credentials_path)
@@ -182,8 +184,13 @@ class GmailWatcher:
         service = self._ensure_service()
         q = query or os.getenv("GMAIL_QUERY") or DEFAULT_QUERY
         try:
-            logging.info("Recherche des messages avec la requête: %s (max_results=%s)", q, max_results)
-            results = service.users().messages().list(userId="me", q=q, maxResults=max_results).execute()
+            logging.info("Recherche des messages dans INBOX avec la requête: %s (max_results=%s)", q, max_results)
+            results = service.users().messages().list(
+                userId="me",
+                q=q,
+                maxResults=max_results,
+                labelIds=["INBOX"],
+            ).execute()
             messages = results.get("messages", [])
             ids = [m["id"] for m in messages]
             logging.info("%s message(s) retourné(s) par la recherche.", len(ids))
@@ -218,6 +225,68 @@ class GmailWatcher:
             logging.info("Message marqué comme lu: id=%s", message_id)
         except HttpError as e:
             raise RuntimeError(f"Erreur lors du marquage en lu du message {message_id}: {e}")
+
+    def trash_message(self, message_id: str) -> None:
+        """Déplace le message dans la corbeille (supprime non définitive)."""
+        service = self._ensure_service()
+        try:
+            service.users().messages().trash(userId="me", id=message_id).execute()
+            logging.info("Message déplacé à la corbeille: id=%s", message_id)
+        except HttpError as e:
+            raise RuntimeError(f"Erreur lors de la suppression (corbeille) du message {message_id}: {e}")
+
+    def _get_or_create_label_id(self, label_name: str) -> str:
+        """Retourne l'ID d'un libellé, le crée s'il n'existe pas."""
+        service = self._ensure_service()
+        if label_name in self._label_cache:
+            return self._label_cache[label_name]
+        try:
+            labels_resp = service.users().labels().list(userId="me").execute()
+            for lbl in labels_resp.get("labels", []):
+                if lbl.get("name") == label_name:
+                    self._label_cache[label_name] = lbl.get("id")
+                    logging.info("Libellé existant trouvé: %s (id=%s)", label_name, lbl.get("id"))
+                    return lbl.get("id")
+        except HttpError as e:
+            raise RuntimeError(f"Erreur lors de la récupération des libellés: {e}")
+
+        # Créer le libellé
+        try:
+            body = {
+                "name": label_name,
+                "labelListVisibility": "labelShow",
+                "messageListVisibility": "show",
+            }
+            created = service.users().labels().create(userId="me", body=body).execute()
+            label_id = created.get("id")
+            self._label_cache[label_name] = label_id
+            logging.info("Libellé créé: %s (id=%s)", label_name, label_id)
+            return label_id
+        except HttpError as e:
+            raise RuntimeError(f"Erreur lors de la création du libellé '{label_name}': {e}")
+
+    def move_message_to_label(self, message_id: str, label_name: str, remove_from_inbox: bool = True) -> None:
+        """Ajoute le libellé au message et retire 'INBOX' pour simuler un déplacement."""
+        service = self._ensure_service()
+        label_id = self._get_or_create_label_id(label_name)
+        remove_ids = ["UNREAD"] if False else []  # on préserve l'état lu/non lu par défaut
+        if remove_from_inbox:
+            remove_ids.append("INBOX")
+        body = {
+            "addLabelIds": [label_id],
+            "removeLabelIds": remove_ids,
+        }
+        try:
+            service.users().messages().modify(userId="me", id=message_id, body=body).execute()
+            logging.info(
+                "Message id=%s déplacé vers le libellé '%s' (id=%s), remove_from_inbox=%s",
+                message_id,
+                label_name,
+                label_id,
+                remove_from_inbox,
+            )
+        except HttpError as e:
+            raise RuntimeError(f"Erreur lors du déplacement du message {message_id} vers '{label_name}': {e}")
 
     def _gather_parts(self, payload: dict, message_id: Optional[str]) -> List[Tuple[str, bytes]]:
         parts: List[Tuple[str, bytes]] = []
@@ -283,20 +352,22 @@ class GmailWatcher:
             soup = BeautifulSoup(html, 'html5lib')
             for a in soup.find_all('a', href=True):
                 href = a['href']
-                if '/update-primary-location' in href:
-                    logging.info("Lien '/update-primary-location' trouvé dans HTML: %s", href)
+                href_l = href.lower()
+                if any(substr in href_l for substr in LINK_SUBSTRINGS):
+                    logging.info("Lien contenant motif %s trouvé dans HTML: %s", LINK_SUBSTRINGS, href)
                     return href
         # Fallback texte brut: capturer URLs
         import re
         url_re = re.compile(r"https?://\S+")
         for txt in text_candidates:
             for url in url_re.findall(txt):
-                if '/update-primary-location' in url:
+                url_l = url.lower()
+                if any(substr in url_l for substr in LINK_SUBSTRINGS):
                     # Nettoyage basique si traînent des ponctuations
                     url = url.rstrip(").,>]')\"")
-                    logging.info("Lien '/update-primary-location' trouvé dans texte: %s", url)
+                    logging.info("Lien contenant motif %s trouvé dans texte: %s", LINK_SUBSTRINGS, url)
                     return url
-        logging.info("Aucun lien '/update-primary-location' trouvé dans le message id=%s", message_id)
+        logging.info("Aucun lien correspondant aux motifs %s trouvé dans le message id=%s", LINK_SUBSTRINGS, message_id)
         return None
 
     @staticmethod

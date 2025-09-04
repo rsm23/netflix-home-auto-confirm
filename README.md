@@ -4,10 +4,11 @@ Une petite appli en Python qui surveille un compte Gmail et ouvre le lien de mis
 
 ## Fonctionnalités
 - Se connecte à Gmail via OAuth2 et l'API Gmail.
-- Filtre les messages dont l'expéditeur est `info@account.netflix.com` et dont l'objet contient `comment mettre à jour votre foyer Netflix`.
-- Parcourt le contenu pour trouver un lien contenant `/update-primary-location` et l'ouvre dans le navigateur par défaut.
+- Filtre les messages non lus (`is:unread`) dont l'expéditeur est `info@account.netflix.com`.
+- Parcourt le contenu de l'email pour trouver un lien contenant l'un des motifs: `update-primary-location`, `update-primary`, `set-primary`, puis ouvre la page.
 - Peut fonctionner en mode "polling" (vérification périodique) simple et fiable.
 - Après clic sur le bouton Netflix, extrait le texte du champ "Demande effectuée par" dans l'email et l'enregistre dans un fichier `.txt` dans un dossier de sortie configurable.
+- Après un succès, marque le mail comme lu et le déplace vers le libellé Gmail ("dossier") `Netflix Location Update` (créé automatiquement).
 
 ## Prérequis
 - Python 3.9+ recommandé.

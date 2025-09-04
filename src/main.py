@@ -124,11 +124,20 @@ def process_once(
                 except Exception as e:
                     logging.warning("Impossible d'extraire/écrire le détails demandeur: %s", e)
 
-            # Marquer le message comme lu après un clic
-            try:
-                watcher.mark_as_read(mid)
-            except Exception as e:
-                logging.warning("Impossible de marquer le message comme lu: %s", e)
+            # Après un succès de clic: marquer comme lu puis déplacer vers un dossier (libellé) dédié
+            if success:
+                # 1) Marquer comme lu
+                try:
+                    watcher.mark_as_read(mid)
+                except Exception as e:
+                    logging.warning("Impossible de marquer le message comme lu: %s", e)
+                # 2) Déplacer dans le libellé cible
+                try:
+                    from .config import TARGET_LABEL
+                    target_label = TARGET_LABEL
+                    watcher.move_message_to_label(mid, target_label, remove_from_inbox=True)
+                except Exception as e:
+                    logging.warning("Impossible de déplacer le message vers le libellé: %s", e)
             # Mettre à jour l'ancre au moment courant pour éviter les anciens emails
             new_anchor = _now_ms()
             logging.info("Traitement terminé pour id=%s, nouvelle ancre=%s", mid, new_anchor)
