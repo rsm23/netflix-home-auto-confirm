@@ -1,4 +1,5 @@
 import os
+import json
 import sys
 import threading
 import time
@@ -93,8 +94,12 @@ class TrayApp:
         except ValueError:
             self.oauth_port = 6969
 
+        # Charger une configuration persistée si disponible
+        self._load_config()
+
         self.icon.menu = pystray.Menu(
             item(lambda _item: f"Status: {'RUNNING' if self.worker and self.worker.is_alive() else 'STOPPED'} | OAuth Port: {self.oauth_port}", None, enabled=False),
+            item(lambda _item: f"Config: {self._config_path()}", None, enabled=False),
             item("Connect", self.connect),
             item("Disconnect", self.disconnect),
             item("Settings", self.open_settings),
@@ -215,6 +220,22 @@ class TrayApp:
         oauth_entry = ttk.Entry(frm, textvariable=oauth_var, width=10)
         oauth_entry.grid(row=3, column=1, sticky="w", padx=5, pady=5)
 
+        # Config path display
+        ttk.Label(frm, text="Config file").grid(row=4, column=0, sticky="w", padx=5, pady=5)
+        cfg_path = self._config_path()
+        cfg_label = ttk.Label(frm, text=cfg_path, wraplength=420)
+        cfg_label.grid(row=4, column=1, sticky="w", padx=5, pady=5)
+
+        def open_config_folder():
+            try:
+                folder = os.path.dirname(cfg_path)
+                if os.path.isdir(folder):
+                    os.startfile(folder)  # Windows
+            except Exception as e:
+                logging.warning("Impossible d'ouvrir le dossier de config: %s", e)
+
+        ttk.Button(frm, text="Open folder", command=open_config_folder).grid(row=4, column=2, sticky="w", padx=5, pady=5)
+
         def save_and_close():
             try:
                 new_interval = int(interval_var.get())
@@ -232,16 +253,65 @@ class TrayApp:
                 self.oauth_port = new_port
                 # Répercuter immédiatement dans l'environnement
                 os.environ["OAUTH_LOCAL_SERVER_PORT"] = str(self.oauth_port)
+                if self.output_dir:
+                    os.environ["OUTPUT_DIR"] = self.output_dir
+                else:
+                    os.environ.pop("OUTPUT_DIR", None)
+                # Sauvegarder la configuration persistée
+                self._save_config()
                 messagebox.showinfo("OK", "Paramètres sauvegardés. Redémarrez le watcher pour appliquer.")
                 on_close()
             except Exception:
                 messagebox.showerror("Erreur", "Veuillez entrer des nombres valides.")
 
         buttons = ttk.Frame(frm)
-        buttons.grid(row=4, column=0, columnspan=3, pady=10)
+        buttons.grid(row=5, column=0, columnspan=3, pady=10)
         ttk.Button(buttons, text="Save", command=save_and_close).grid(row=0, column=0, padx=5)
         ttk.Button(buttons, text="Cancel", command=on_close).grid(row=0, column=1, padx=5)
         win.mainloop()
+
+    # --- Persistence helpers ---
+    def _config_path(self) -> str:
+        return os.path.join(os.getcwd(), "settings.json")
+
+    def _load_config(self) -> None:
+        try:
+            cfg_path = self._config_path()
+            if not os.path.exists(cfg_path):
+                return
+            with open(cfg_path, "r", encoding="utf-8") as f:
+                cfg = json.load(f)
+            # Appliquer valeurs si présentes et valides
+            interval = int(cfg.get("interval", self.interval))
+            if interval > 0:
+                self.interval = interval
+            close_delay = int(cfg.get("close_delay", self.close_delay))
+            if close_delay >= 0:
+                self.close_delay = close_delay
+            output_dir = cfg.get("output_dir")
+            if isinstance(output_dir, str) and output_dir.strip():
+                self.output_dir = output_dir.strip()
+                os.environ["OUTPUT_DIR"] = self.output_dir
+            oauth_port = int(cfg.get("oauth_port", self.oauth_port))
+            if 0 < oauth_port <= 65535:
+                self.oauth_port = oauth_port
+                os.environ["OAUTH_LOCAL_SERVER_PORT"] = str(self.oauth_port)
+        except Exception:
+            # Ignorer les erreurs de lecture/parse et garder les valeurs actuelles
+            logging.warning("Impossible de charger settings.json, valeurs par défaut conservées.")
+
+    def _save_config(self) -> None:
+        try:
+            cfg = {
+                "interval": self.interval,
+                "close_delay": self.close_delay,
+                "output_dir": self.output_dir,
+                "oauth_port": self.oauth_port,
+            }
+            with open(self._config_path(), "w", encoding="utf-8") as f:
+                json.dump(cfg, f, ensure_ascii=False, indent=2)
+        except Exception as e:
+            logging.warning("Impossible d'enregistrer settings.json: %s", e)
 
     def quit(self, icon: Optional[pystray.Icon] = None, item_clicked: Optional[item] = None):
         try:
