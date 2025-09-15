@@ -154,7 +154,9 @@ class TrayApp:
         self.output_dir: Optional[str] = os.getenv("OUTPUT_DIR")
         # Logs: activés par défaut, dossier par défaut ./logs
         self.logging_enabled: bool = True
-        self.log_dir: str = os.path.join(os.getcwd(), "logs")
+        self.log_dir: str = os.path.join(self._app_base_dir(), "logs")
+        # Run at startup (Windows only)
+        self.run_at_startup: bool = False
         # Port OAuth local (par défaut 6969)
         try:
             self.oauth_port: int = int(os.getenv("OAUTH_LOCAL_SERVER_PORT", "6969"))
@@ -177,6 +179,8 @@ class TrayApp:
 
         # Setup logging selon configuration
         self._setup_logging()
+        # Appliquer le démarrage auto si configuré
+        self._apply_run_at_startup(self.run_at_startup)
 
     def start(self, icon: Optional[pystray.Icon] = None, item_clicked: Optional[item] = None):
         if self.worker and self.worker.is_alive():
@@ -302,11 +306,16 @@ class TrayApp:
 
         ttk.Button(frm, text="Browse...", command=browse_log_folder).grid(row=5, column=2, sticky="w", padx=5, pady=5)
 
+        # Run at startup
+        run_startup_var = tk.BooleanVar(value=bool(self.run_at_startup))
+        run_startup_chk = ttk.Checkbutton(frm, text="Run at Windows startup", variable=run_startup_var)
+        run_startup_chk.grid(row=6, column=0, sticky="w", padx=5, pady=5)
+
         # Config path display
-        ttk.Label(frm, text="Config file").grid(row=6, column=0, sticky="w", padx=5, pady=5)
+        ttk.Label(frm, text="Config file").grid(row=7, column=0, sticky="w", padx=5, pady=5)
         cfg_path = self._config_path()
         cfg_label = ttk.Label(frm, text=cfg_path, wraplength=420)
-        cfg_label.grid(row=6, column=1, sticky="w", padx=5, pady=5)
+        cfg_label.grid(row=7, column=1, sticky="w", padx=5, pady=5)
 
         def open_config_folder():
             try:
@@ -316,7 +325,7 @@ class TrayApp:
             except Exception as e:
                 logging.warning("Impossible d'ouvrir le dossier de config: %s", e)
 
-        ttk.Button(frm, text="Open folder", command=open_config_folder).grid(row=6, column=2, sticky="w", padx=5, pady=5)
+        ttk.Button(frm, text="Open folder", command=open_config_folder).grid(row=7, column=2, sticky="w", padx=5, pady=5)
 
         def save_and_close():
             try:
@@ -339,8 +348,13 @@ class TrayApp:
                 new_log_dir = log_dir_var.get().strip()
                 if not new_log_dir:
                     # si vide, remettre dossier par défaut
-                    new_log_dir = os.path.join(os.getcwd(), "logs")
+                    new_log_dir = os.path.join(self._app_base_dir(), "logs")
                 self.log_dir = new_log_dir
+                # Run at startup
+                new_run_startup = bool(run_startup_var.get())
+                if new_run_startup != self.run_at_startup:
+                    self.run_at_startup = new_run_startup
+                    self._apply_run_at_startup(self.run_at_startup)
                 # Répercuter immédiatement dans l'environnement
                 os.environ["OAUTH_LOCAL_SERVER_PORT"] = str(self.oauth_port)
                 if self.output_dir:
@@ -371,14 +385,20 @@ class TrayApp:
                 messagebox.showerror("Erreur", "Veuillez entrer des nombres valides.")
 
         buttons = ttk.Frame(frm)
-        buttons.grid(row=7, column=0, columnspan=3, pady=10)
+        buttons.grid(row=8, column=0, columnspan=3, pady=10)
         ttk.Button(buttons, text="Save", command=save_and_close).grid(row=0, column=0, padx=5)
         ttk.Button(buttons, text="Cancel", command=on_close).grid(row=0, column=1, padx=5)
         win.mainloop()
 
     # --- Persistence helpers ---
     def _config_path(self) -> str:
-        return os.path.join(os.getcwd(), "settings.json")
+        return os.path.join(self._app_base_dir(), "settings.json")
+
+    def _app_base_dir(self) -> str:
+        if getattr(sys, "frozen", False):
+            return os.path.dirname(sys.executable)
+        # fallback dev
+        return os.getcwd()
 
     def _load_config(self) -> None:
         try:
@@ -408,6 +428,9 @@ class TrayApp:
             log_dir = cfg.get("log_dir", self.log_dir)
             if isinstance(log_dir, str) and log_dir.strip():
                 self.log_dir = log_dir.strip()
+            # Run at startup
+            ras = cfg.get("run_at_startup", self.run_at_startup)
+            self.run_at_startup = bool(ras)
         except Exception:
             # Ignorer les erreurs de lecture/parse et garder les valeurs actuelles
             logging.warning("Impossible de charger settings.json, valeurs par défaut conservées.")
@@ -421,6 +444,7 @@ class TrayApp:
                 "oauth_port": self.oauth_port,
                 "logging_enabled": self.logging_enabled,
                 "log_dir": self.log_dir,
+                "run_at_startup": self.run_at_startup,
             }
             with open(self._config_path(), "w", encoding="utf-8") as f:
                 json.dump(cfg, f, ensure_ascii=False, indent=2)
@@ -461,6 +485,37 @@ class TrayApp:
                 logging.info("Fichier de log: %s", log_file)
             except Exception as e:
                 logging.warning("Impossible d'initialiser le fichier de log: %s", e)
+
+    # --- Windows startup (HKCU Run) -----------------------------------------------------------
+    def _apply_run_at_startup(self, enabled: bool) -> None:
+        if os.name != "nt":
+            return
+        try:
+            import winreg  # type: ignore
+        except Exception:
+            logging.warning("winreg non disponible: impossible de configurer le démarrage automatique.")
+            return
+        try:
+            key_path = r"Software\Microsoft\Windows\CurrentVersion\Run"
+            with winreg.OpenKey(winreg.HKEY_CURRENT_USER, key_path, 0, winreg.KEY_SET_VALUE) as key:
+                name = "confirm-netflix-house"
+                if enabled:
+                    if getattr(sys, "frozen", False):
+                        cmd = f'"{sys.executable}"'
+                    else:
+                        py = sys.executable.replace("/", "\\")
+                        # Démarrer le module explicitement en dev
+                        cmd = f'"{py}" -m src.tray_app'
+                    winreg.SetValueEx(key, name, 0, winreg.REG_SZ, cmd)
+                    logging.info("Démarrage automatique activé (%s)", cmd)
+                else:
+                    try:
+                        winreg.DeleteValue(key, name)
+                        logging.info("Démarrage automatique désactivé")
+                    except FileNotFoundError:
+                        pass
+        except Exception as e:
+            logging.warning("Configuration du démarrage automatique échouée: %s", e)
 
     def quit(self, icon: Optional[pystray.Icon] = None, item_clicked: Optional[item] = None):
         try:

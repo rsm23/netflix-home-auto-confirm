@@ -132,6 +132,8 @@ Dans le menu "Settings", vous pouvez régler:
 - `Interval (s)` : l’intervalle de polling.
 - `Close Delay (s)` : le délai de fermeture de l’onglet après le clic Playwright.
 - `Output Folder` : le dossier où seront enregistrés les fichiers `.txt` contenant le texte "Demande effectuée par". Lors de la sauvegarde, si le watcher est actif, il est redémarré automatiquement pour appliquer les changements.
+ - `Enable Logging` et `Logs Folder` : activer/désactiver les logs détaillés et choisir l’emplacement du fichier de log.
+ - `Run at Windows startup` : si coché, ajoute une entrée dans le registre Windows (HKCU\Software\Microsoft\Windows\CurrentVersion\Run) pour lancer automatiquement l’application à l’ouverture de session. Décochez pour la supprimer.
 
 ## Construire un .exe (Windows)
 
@@ -140,7 +142,7 @@ Nous recommandons PyInstaller pour packager un .exe autonome:
 ```pwsh
 .\.venv\Scripts\Activate.ps1
 pip install pyinstaller
-pyinstaller --noconsole --name confirm-netflix-house --add-data "credentials.json;." --hidden-import playwright --hidden-import bs4 --hidden-import googleapiclient --hidden-import google.oauth2 --hidden-import google_auth_oauthlib --hidden-import html5lib --hidden-import pystray --hidden-import PIL --collect-all playwright --collect-all bs4 --collect-all googleapiclient --collect-all google_auth_oauthlib --collect-all html5lib --collect-all pystray --collect-all PIL .\src\tray_app.py
+Remove-Item -Recurse -Force .\build -ErrorAction SilentlyContinue; Remove-Item -Recurse -Force .\dist -ErrorAction SilentlyContinue; Remove-Item .\confirm-netflix-house.spec -ErrorAction SilentlyContinue; pyinstaller --noconsole --name confirm-netflix-house --add-data "credentials.json;." --hidden-import playwright --hidden-import bs4 --hidden-import googleapiclient --hidden-import google.oauth2 --hidden-import google_auth_oauthlib --hidden-import html5lib --hidden-import pystray --hidden-import PIL --collect-all playwright --collect-all bs4 --collect-all googleapiclient --collect-all google_auth_oauthlib --collect-all html5lib --collect-all pystray --collect-all PIL .\src\tray_app.py
 ```
 
 ### Nettoyage (avant rebuild)
@@ -175,6 +177,9 @@ Deux approches pratiques:
 2) Dossier Démarrage
   - Ouvrez `shell:startup` dans l’explorateur.
   - Collez un raccourci vers `confirm-netflix-house.exe`.
+
+3) Option intégrée dans la GUI
+  - Ouvrez `Settings` et cochez `Run at Windows startup`. L’application crée/supprime une entrée dans `HKCU\Software\Microsoft\Windows\CurrentVersion\Run` sous le nom `confirm-netflix-house`.
 
 Variables utiles pour le mode service/tray:
 - `POLL_INTERVAL` (ex: `60`) pour l’intervalle de scan.
